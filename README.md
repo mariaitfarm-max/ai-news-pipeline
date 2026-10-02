@@ -6,20 +6,21 @@ AI মডেলগুলোর দাম, context window, আর intelligence be
 
 ## এটা কীভাবে কাজ করে
 ```
-এই (পাবলিক) রিপো — শুধু কোড থাকে
+এই রিপো (public + Vercel দুটোর সোর্সই একসাথে)
   .github/workflows/update-model-pricing.yml  — প্রতিদিন একবার ট্রিগার হয়
   scripts/fetch-pricing.js                      — OpenRouter থেকে টানে, ফিল্টার করে
+  api/model-pricing.js                           — Vercel ফাংশন, প্রাইভেট রিপো থেকে পড়ে অ্যাপকে দেয়
 
-        │  (GitHub Action রান হয়)
+        │  (GitHub Action রান হয়, প্রতিদিন)
         ▼
 
 প্রাইভেট রিপো (ai-news-data) — শুধু ডেটা থাকে
   model-pricing.json   — { last_updated, models: [...] }
 
-        │  (পরে, Vercel/অ্যাপ এখান থেকে পড়বে)
+        │  (অ্যাপ যখনই রিকোয়েস্ট করে, তখনই — cache 1 ঘণ্টা)
         ▼
 
-Vercel API route  →  Android অ্যাপ
+Vercel (এই রিপো থেকেই ডিপ্লয় হয়)  →  Android অ্যাপ (ModelComparisonActivity)
 ```
 
 ## সেটআপ ধাপে ধাপে
@@ -47,6 +48,36 @@ Fine-grained tokens → Generate new token
 এই রিপো → Actions ট্যাব → "Update AI Model Pricing" → "Run workflow" বাটন।
 সফল হলে `ai-news-data` রিপোতে `model-pricing.json` ফাইলটা তৈরি হয়ে যাবে।
 এরপর থেকে এটা প্রতিদিন রাত ৩টা UTC-তে (বাংলাদেশ সময় সকাল ৯টা) নিজে থেকে চলবে।
+
+## Vercel সেটআপ (api/model-pricing.js ডিপ্লয় করা)
+
+**১. vercel.com-এ GitHub দিয়ে সাইনআপ করো** (ফ্রি, কার্ড লাগে না)
+
+**২. "Add New Project" → এই রিপোটা import করো**
+Vercel নিজে থেকেই `api/` ফোল্ডারটা চিনে নেবে, আলাদা কনফিগ লাগবে না।
+
+**৩. একটা নতুন, শুধু READ-অনুমতির টোকেন বানাও** (ধাপ ২-এর token-টা আলাদা
+রাখা ভালো — GitHub Actions-এর write access লাগে, কিন্তু Vercel-এর শুধু
+read লাগে; আলাদা টোকেন রাখলে কোনো একটা ফাঁস হলেও ক্ষতি কম হবে)
+- Fine-grained token, শুধু `ai-news-data` রিপোতে অ্যাক্সেস
+- Permissions: Contents → **Read-only**
+
+**৪. Vercel প্রজেক্টে Environment Variables যোগ করো**
+Project → Settings → Environment Variables:
+- `GITHUB_DATA_OWNER` = তোমার GitHub ইউজারনেম
+- `GITHUB_DATA_REPO` = `ai-news-data`
+- `GITHUB_DATA_TOKEN` = ধাপ ৩-এর read-only টোকেন
+
+**৫. Deploy চাপো, তারপর টেস্ট করো**
+ডিপ্লয় শেষে একটা URL পাবে (যেমন `https://ai-news-backend.vercel.app`)।
+ব্রাউজারে `https://তোমার-প্রজেক্ট.vercel.app/api/model-pricing` খুলে
+JSON রেসপন্স আসছে কিনা দেখো।
+
+**৬. Android অ্যাপে এই URL বসাও**
+`app/src/main/java/com/ainews/app/network/ApiConfig.kt`-এ
+`BACKEND_BASE_URL`-এর মান বদলে তোমার Vercel URL বসাও (শেষে `/` সহ)।
+Discover ট্যাবে এখন "Compare AI Models" কার্ড থেকে এই ডেটা দেখা যাবে,
+`last_updated` তারিখ-সহ।
 
 ## আউটপুট ফরম্যাট (`model-pricing.json`)
 ```json
@@ -94,11 +125,8 @@ GitHub স্বয়ংক্রিয়ভাবে scheduled workflow ব�
 সীমাটা মাথায় রেখো যখন মনিটাইজেশন যোগ করবে।
 
 ## পরের ধাপ
-এই ডেটা এখন প্রাইভেট রিপোতে বসছে। এরপর লাগবে:
-1. একটা Vercel API route যেটা GitHub API দিয়ে এই `model-pricing.json`
-   প্রাইভেট রিপো থেকে পড়ে অ্যাপকে দেবে
-2. Android-এ একটা নতুন স্ক্রিন/সেকশন যেটা এই ডেটা টেবিল আকারে দেখাবে
-   (Discover ট্যাবে একটা "Compare AI Models" এন্ট্রি হিসেবে যোগ করা যায়)
-
-একই প্যাটার্নে খবরের জন্যও (২০-৩০ মিনিট পরপর, NewsAPI চেক করে) আরেকটা
-workflow বানানো যাবে — কাঠামোটা প্রায় একই থাকবে।
+এই ডেটা এখন প্রাইভেট রিপোতে বসছে, আর Vercel ফাংশন/Android স্ক্রিনও লেখা
+হয়ে গেছে (নিচে সেটআপ দেখো)। এখন বাকি:
+1. একই প্যাটার্নে খবরের জন্যও (২০-৩০ মিনিট পরপর, NewsAPI চেক করে) আরেকটা
+   workflow — কাঠামো প্রায় একই থাকবে
+2. প্রকৃত LLM সামারাইজেশন ব্যাকএন্ড (এখনো বাকি, আলাদা আলোচনা)

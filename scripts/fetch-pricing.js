@@ -4,8 +4,12 @@
 // একটা কিউরেটেড লিস্টের মডেলগুলো বেছে নিয়ে, তুলনার জন্য দরকারি ফিল্ডগুলো
 // বের করে OUTPUT_PATH-এ একটা JSON ফাইল হিসেবে সেভ করে।
 
-const fs = require("fs");
-const path = require("path");
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/models";
 const OUTPUT_PATH =

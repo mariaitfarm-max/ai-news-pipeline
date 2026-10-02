@@ -1,0 +1,7 @@
+{
+  "name": "ai-news-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "GitHub Actions pricing pipeline + Vercel API route for the AI News app"
+}
