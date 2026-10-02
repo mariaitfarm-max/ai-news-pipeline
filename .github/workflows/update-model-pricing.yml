@@ -23,7 +23,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           # নিজের ইউজারনেম/প্রাইভেট-রিপোর নাম বসাও
-          repository: YOUR_USERNAME/ai-news-data
+          repository: mariaitfarm-max/ai-news-data
           token: ${{ secrets.DATA_REPO_TOKEN }}
           path: data-repo
 
