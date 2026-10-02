@@ -1,1 +1,104 @@
-# ai-news-pipeline
+# AI News — Pricing/Comparison Data Pipeline
+
+GitHub Actions দিয়ে প্রতিদিন একবার OpenRouter-এর ফ্রি পাবলিক API থেকে বড়
+AI মডেলগুলোর দাম, context window, আর intelligence benchmark টেনে, একটা
+প্রাইভেট রিপোতে JSON হিসেবে সেভ রাখে — সাথে "শেষ কবে আপডেট হয়েছে" টাইমস্ট্যাম্প।
+
+## এটা কীভাবে কাজ করে
+```
+এই (পাবলিক) রিপো — শুধু কোড থাকে
+  .github/workflows/update-model-pricing.yml  — প্রতিদিন একবার ট্রিগার হয়
+  scripts/fetch-pricing.js                      — OpenRouter থেকে টানে, ফিল্টার করে
+
+        │  (GitHub Action রান হয়)
+        ▼
+
+প্রাইভেট রিপো (ai-news-data) — শুধু ডেটা থাকে
+  model-pricing.json   — { last_updated, models: [...] }
+
+        │  (পরে, Vercel/অ্যাপ এখান থেকে পড়বে)
+        ▼
+
+Vercel API route  →  Android অ্যাপ
+```
+
+## সেটআপ ধাপে ধাপে
+
+**১. একটা প্রাইভেট রিপো বানাও** (যেমন `ai-news-data`) — এখানে শুধু ডেটা
+জমা হবে, কোড না। খালি রাখলেই হবে, প্রথম রানেই `model-pricing.json` তৈরি
+হয়ে যাবে।
+
+**২. একটা Fine-grained Personal Access Token বানাও**
+GitHub → Settings → Developer settings → Personal access tokens →
+Fine-grained tokens → Generate new token
+- Repository access: শুধু `ai-news-data` রিপোটা বেছে নাও (সব রিপো না)
+- Permissions: Contents → Read and write
+
+**৩. এই (কোড) রিপোতে টোকেনটা সিক্রেট হিসেবে যোগ করো**
+এই রিপো → Settings → Secrets and variables → Actions → New repository secret
+- Name: `DATA_REPO_TOKEN`
+- Value: ধাপ ২-এর টোকেন
+
+**৪. workflow ফাইলে ইউজারনেম বসাও**
+`.github/workflows/update-model-pricing.yml`-এ
+`YOUR_USERNAME/ai-news-data`-এর জায়গায় নিজের GitHub ইউজারনেম বসাও।
+
+**৫. প্রথমবার ম্যানুয়ালি টেস্ট করো**
+এই রিপো → Actions ট্যাব → "Update AI Model Pricing" → "Run workflow" বাটন।
+সফল হলে `ai-news-data` রিপোতে `model-pricing.json` ফাইলটা তৈরি হয়ে যাবে।
+এরপর থেকে এটা প্রতিদিন রাত ৩টা UTC-তে (বাংলাদেশ সময় সকাল ৯টা) নিজে থেকে চলবে।
+
+## আউটপুট ফরম্যাট (`model-pricing.json`)
+```json
+{
+  "last_updated": "2026-09-29T03:00:12.000Z",
+  "source": "https://openrouter.ai/api/v1/models",
+  "model_count": 11,
+  "models": [
+    {
+      "id": "google/gemini-3.8-flash",
+      "name": "Google: Gemini 3.8 Flash",
+      "provider": "google",
+      "input_price_per_million_usd": 0.75,
+      "output_price_per_million_usd": 3.75,
+      "is_free": false,
+      "context_length": 1048576,
+      "intelligence_index": 40.9,
+      "coding_index": 76.3,
+      "input_modalities": ["text", "image", "video", "file", "audio"]
+    }
+  ]
+}
+```
+অ্যাপে "শেষ আপডেট: [তারিখ]" দেখাতে `last_updated` ফিল্ডটাই ব্যবহার করবে।
+
+## কোন মডেল দেখাবে সেটা নিয়ন্ত্রণ
+`scripts/fetch-pricing.js`-এর ওপরের দিকে `INCLUDE_PREFIXES` লিস্টটা
+এডিট করো। OpenRouter-এ ৪০০+ মডেল আছে — সবগুলো দেখানো অ্যাপে কাজের না, তাই
+এখানে বড় প্রোভাইডারদের ফ্ল্যাগশিপ মডেলগুলো বেছে রাখা হয়েছে। নতুন গুরুত্বপূর্ণ
+মডেল এলে এই লিস্টে যোগ করতে হবে — এটা স্বয়ংক্রিয়ভাবে "সব নতুন মডেল" ধরবে না,
+ইচ্ছাকৃতভাবে কিউরেটেড রাখা হয়েছে।
+
+## ৬০ দিনের নিষ্ক্রিয়তার ব্যাপারে
+GitHub স্বয়ংক্রিয়ভাবে scheduled workflow বন্ধ করে দেয় যদি এই (কোড) রিপোতে
+৬০ দিন কোনো কমিট না পড়ে। এটা ঠেকাতে workflow-টা প্রতিবার চলার সময় এই রিপোতেই
+একটা ছোট `status/last-run.txt` কমিট করে — তাই আলাদা কিছু করা লাগবে না, এটা
+নিজে থেকেই সবসময় সক্রিয় থাকবে।
+
+## Vercel নিয়ে একটা গুরুত্বপূর্ণ নোট
+তোমরা আগে আলোচনা করেছিলে অ্যাপে বিজ্ঞাপন/সাবস্ক্রিপশন রাখার কথা — সেটা মাথায়
+রেখে: Vercel-এর Hobby (ফ্রি) প্ল্যান তাদের নিজস্ব শর্তানুযায়ী **শুধু ব্যক্তিগত,
+অ-বাণিজ্যিক ব্যবহারের জন্য**। অ্যাপে বিজ্ঞাপন বা পেইড সাবস্ক্রিপশন যোগ করলে
+সেটা "commercial use" হিসেবে গণ্য হয়, তখন Vercel Pro ($20/মাস থেকে শুরু)
+লাগবে। ডেভেলপমেন্ট/টেস্টিং পর্যায়ে Hobby দিয়ে শুরু করাই ঠিক আছে, শুধু এই
+সীমাটা মাথায় রেখো যখন মনিটাইজেশন যোগ করবে।
+
+## পরের ধাপ
+এই ডেটা এখন প্রাইভেট রিপোতে বসছে। এরপর লাগবে:
+1. একটা Vercel API route যেটা GitHub API দিয়ে এই `model-pricing.json`
+   প্রাইভেট রিপো থেকে পড়ে অ্যাপকে দেবে
+2. Android-এ একটা নতুন স্ক্রিন/সেকশন যেটা এই ডেটা টেবিল আকারে দেখাবে
+   (Discover ট্যাবে একটা "Compare AI Models" এন্ট্রি হিসেবে যোগ করা যায়)
+
+একই প্যাটার্নে খবরের জন্যও (২০-৩০ মিনিট পরপর, NewsAPI চেক করে) আরেকটা
+workflow বানানো যাবে — কাঠামোটা প্রায় একই থাকবে।

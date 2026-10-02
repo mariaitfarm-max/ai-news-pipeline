@@ -1,0 +1,60 @@
+name: Update AI Model Pricing
+
+"on":
+  schedule:
+    # প্রতিদিন একবার, UTC রাত ৩টায় (বাংলাদেশ সময় সকাল ৯টা) — দামের তথ্য
+    # ঘন ঘন বদলায় না, তাই নিউজের মতো ২০-৩০ মিনিট পরপর চেক করার দরকার নেই
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    # এটা থাকলে GitHub-এর Actions ট্যাব থেকে ম্যানুয়ালি "Run workflow"
+    # বাটনে চেপে সাথে সাথে টেস্ট করা যাবে, শিডিউলের অপেক্ষা না করেই
+
+permissions:
+  contents: write # এই (পাবলিক) রিপোতে last-run.txt কমিট করার জন্য
+
+jobs:
+  update-pricing:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout this repo (স্ক্রিপ্ট এখানে আছে)
+        uses: actions/checkout@v4
+
+      - name: Checkout private data repo
+        uses: actions/checkout@v4
+        with:
+          # নিজের ইউজারনেম/প্রাইভেট-রিপোর নাম বসাও
+          repository: YOUR_USERNAME/ai-news-data
+          token: ${{ secrets.DATA_REPO_TOKEN }}
+          path: data-repo
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Fetch latest pricing from OpenRouter
+        run: node scripts/fetch-pricing.js
+        env:
+          OUTPUT_PATH: ${{ github.workspace }}/data-repo/model-pricing.json
+
+      - name: Commit pricing data to private repo
+        working-directory: data-repo
+        run: |
+          git config user.name "pricing-bot"
+          git config user.email "actions@github.com"
+          git add model-pricing.json
+          git diff --staged --quiet || git commit -m "Update AI model pricing $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git push
+
+      - name: Record last run in this repo
+        # এই কমিটটা শুধু pricing-এর জন্য না — এই পাবলিক রিপোতে অন্তত একটা
+        # কমিট নিয়মিত পড়লে GitHub ৬০ দিন "নিষ্ক্রিয়তা"র কারণে শিডিউল বন্ধ
+        # করে দেবে না (এটা GitHub Actions-এর একটা পরিচিত ব্যাপার)
+        run: |
+          mkdir -p status
+          echo "Last run: $(date -u +'%Y-%m-%d %H:%M UTC')" > status/last-run.txt
+          git config user.name "pricing-bot"
+          git config user.email "actions@github.com"
+          git add status/last-run.txt
+          git diff --staged --quiet || git commit -m "chore: keepalive $(date -u +'%Y-%m-%d')"
+          git push
