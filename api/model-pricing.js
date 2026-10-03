@@ -7,7 +7,7 @@
 // Environment Variable হিসেবে) নিরাপদে রাখে, অ্যাপের কাছে কখনো পাঠায় না —
 // অ্যাপ শুধু এই পাবলিক URL-টা কল করে, কোনো সিক্রেট ছাড়াই।
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   const owner = process.env.GITHUB_DATA_OWNER;
   const repo = process.env.GITHUB_DATA_REPO;
   const token = process.env.GITHUB_DATA_TOKEN;
@@ -41,11 +41,9 @@ export default async function handler(req, res) {
     const content = Buffer.from(file.content, "base64").toString("utf-8");
     const data = JSON.parse(content);
 
-    // এক ঘণ্টা এজ-এ ক্যাশ থাকবে — যেহেতু GitHub Actions দিনে একবারই ডেটা
-    // আপডেট করে, প্রতিটা অ্যাপ-রিকোয়েস্টে GitHub API কল করার দরকার নেই
     res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
     return res.status(200).json(data);
   } catch (err) {
     return res.status(500).json({ error: "সার্ভার এরর: " + String(err.message || err) });
   }
-}
+};
