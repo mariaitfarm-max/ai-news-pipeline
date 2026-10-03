@@ -7,7 +7,7 @@
 // Environment Variable হিসেবে) নিরাপদে রাখে, অ্যাপের কাছে কখনো পাঠায় না —
 // অ্যাপ শুধু এই পাবলিক URL-টা কল করে, কোনো সিক্রেট ছাড়াই।
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   const owner = process.env.GITHUB_DATA_OWNER;
   const repo = process.env.GITHUB_DATA_REPO;
   const token = process.env.GITHUB_DATA_TOKEN;
@@ -46,4 +46,4 @@ module.exports = async function handler(req, res) {
   } catch (err) {
     return res.status(500).json({ error: "সার্ভার এরর: " + String(err.message || err) });
   }
-};
+}
