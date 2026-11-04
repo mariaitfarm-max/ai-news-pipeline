@@ -1,5 +1,0 @@
-{
-  "redirects": [
-    { "source": "/", "destination": "/api/model-pricing", "permanent": false }
-  ]
-}
