@@ -1,7 +1,13 @@
 {
   "name": "ai-news-backend",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
-  "description": "GitHub Actions pricing pipeline + Vercel API route for the AI News app"
+  "description": "GitHub Actions pipeline + Cloudflare Worker API for the AI News app",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "test": "node --test",
+    "news": "node scripts/update-news.js",
+    "pricing": "node scripts/update-pricing.js"
+  }
 }

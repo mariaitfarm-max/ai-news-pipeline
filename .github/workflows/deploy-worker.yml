@@ -1,0 +1,79 @@
+name: Deploy API (Cloudflare Worker)
+
+"on":
+  workflow_dispatch:
+  push:
+    paths:
+      - "worker/**"
+      - "scripts/cf-setup.js"
+      - "scripts/lib/cf.js"
+      - ".github/workflows/deploy-worker.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: deploy-worker
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Cloudflare প্রস্তুত (KV + subdomain + wrangler.toml)
+        id: prep
+        run: node scripts/cf-setup.js
+
+      - name: Worker ডিপ্লয়
+        working-directory: worker
+        run: npx --yes wrangler@4 deploy
+
+      - name: প্রথম ডেটা বসানো (প্রাইসিং + নিউজ)
+        # ফেইল করলেও ডিপ্লয় সফল ধরা হবে; পরে update workflow-গুলো আবার চেষ্টা করবে
+        continue-on-error: true
+        run: |
+          node scripts/update-pricing.js
+          node scripts/update-news.js
+
+      - name: Health check
+        run: |
+          URL="${{ steps.prep.outputs.worker_url }}"
+          for i in $(seq 1 15); do
+            code=$(curl -s -o /tmp/health.json -w '%{http_code}' "$URL/health" || true)
+            if [ "$code" = "200" ]; then
+              cat /tmp/health.json; echo
+              exit 0
+            fi
+            echo "অপেক্ষা... ($code)"
+            sleep 6
+          done
+          echo "Health check ফেল — workers.dev চালু হতে কয়েক মিনিট লাগতে পারে, আবার Run workflow দিন"
+          exit 1
+
+      - name: URL সেভ + পুরনো Vercel ফাইল পরিষ্কার
+        run: |
+          URL="${{ steps.prep.outputs.worker_url }}"
+          echo "### ✅ API চালু" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "অ্যাপের ApiConfig.kt-তে এই URL বসান (শেষে / সহ):" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`$URL/\`" >> "$GITHUB_STEP_SUMMARY"
+          mkdir -p status
+          echo "$URL/" > status/backend-url.txt
+          git rm -rq --ignore-unmatch api vercel.json scripts/fetch-pricing.js
+          git config user.name "deploy-bot"
+          git config user.email "actions@github.com"
+          git add status/backend-url.txt
+          git diff --staged --quiet || git commit -m "chore: backend url + cleanup legacy files"
+          git pull --rebase origin "${{ github.ref_name }}" || true
+          git push || true

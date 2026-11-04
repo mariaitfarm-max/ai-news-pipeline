@@ -1,132 +1,71 @@
-# AI News — Pricing/Comparison Data Pipeline
+# AI News — Backend (GitHub Actions + Cloudflare Workers)
 
-GitHub Actions দিয়ে প্রতিদিন একবার OpenRouter-এর ফ্রি পাবলিক API থেকে বড়
-AI মডেলগুলোর দাম, context window, আর intelligence benchmark টেনে, একটা
-প্রাইভেট রিপোতে JSON হিসেবে সেভ রাখে — সাথে "শেষ কবে আপডেট হয়েছে" টাইমস্ট্যাম্প।
-
-## এটা কীভাবে কাজ করে
 ```
-এই রিপো (public + Vercel দুটোর সোর্সই একসাথে)
-  .github/workflows/update-model-pricing.yml  — প্রতিদিন একবার ট্রিগার হয়
-  scripts/fetch-pricing.js                      — OpenRouter থেকে টানে, ফিল্টার করে
-  api/model-pricing.js                           — Vercel ফাংশন, প্রাইভেট রিপো থেকে পড়ে অ্যাপকে দেয়
-
-        │  (GitHub Action রান হয়, প্রতিদিন)
-        ▼
-
-প্রাইভেট রিপো (ai-news-data) — শুধু ডেটা থাকে
-  model-pricing.json   — { last_updated, models: [...] }
-
-        │  (অ্যাপ যখনই রিকোয়েস্ট করে, তখনই — cache 1 ঘণ্টা)
-        ▼
-
-Vercel (এই রিপো থেকেই ডিপ্লয় হয়)  →  Android অ্যাপ (ModelComparisonActivity)
+GitHub Actions (cron)  ──►  Cloudflare KV  ──►  Cloudflare Worker  ──►  Android অ্যাপ
+ • প্রতি ৩০ মিনিট: RSS → /api/news
+ • প্রতিদিন: OpenRouter → /api/model-pricing
 ```
 
-## সেটআপ ধাপে ধাপে
+সব কোড ও কনফিগ এই রিপোতে। Cloudflare থেকে শুধু **২টা জিনিস** আনতে হয়, GitHub Secrets-এ বসাতে হয়।
 
-**১. একটা প্রাইভেট রিপো বানাও** (যেমন `ai-news-data`) — এখানে শুধু ডেটা
-জমা হবে, কোড না। খালি রাখলেই হবে, প্রথম রানেই `model-pricing.json` তৈরি
-হয়ে যাবে।
+## একবারের সেটআপ
 
-**২. একটা Fine-grained Personal Access Token বানাও**
-GitHub → Settings → Developer settings → Personal access tokens →
-Fine-grained tokens → Generate new token
-- Repository access: শুধু `ai-news-data` রিপোটা বেছে নাও (সব রিপো না)
-- Permissions: Contents → Read and write
+### ১) Cloudflare থেকে যা আনবেন
+1. dash.cloudflare.com-এ ফ্রি অ্যাকাউন্ট খুলুন।
+2. **Account ID**: Workers & Pages পেজের ডান পাশে (বা ব্রাউজার URL-এর `dash.cloudflare.com/<এই অংশটা>/...`)।
+3. **API Token**: Profile → API Tokens → Create Token → টেমপ্লেট **"Edit Cloudflare Workers"**
+   → Account Resources: আপনার অ্যাকাউন্ট, Zone Resources: All zones → Create → টোকেন কপি করুন (একবারই দেখাবে)।
 
-**৩. এই (কোড) রিপোতে টোকেনটা সিক্রেট হিসেবে যোগ করো**
-এই রিপো → Settings → Secrets and variables → Actions → New repository secret
-- Name: `DATA_REPO_TOKEN`
-- Value: ধাপ ২-এর টোকেন
+### ২) GitHub-এ কী নামে রাখবেন
+রিপো → Settings → Secrets and variables → Actions → **New repository secret**
 
-**৪. workflow ফাইলে ইউজারনেম বসাও**
-`.github/workflows/update-model-pricing.yml`-এ
-`YOUR_USERNAME/ai-news-data`-এর জায়গায় নিজের GitHub ইউজারনেম বসাও।
+| Name (হুবহু) | Value |
+|---|---|
+| `CLOUDFLARE_API_TOKEN` | ধাপ ১-এর টোকেন |
+| `CLOUDFLARE_ACCOUNT_ID` | ধাপ ১-এর Account ID |
 
-**৫. প্রথমবার ম্যানুয়ালি টেস্ট করো**
-এই রিপো → Actions ট্যাব → "Update AI Model Pricing" → "Run workflow" বাটন।
-সফল হলে `ai-news-data` রিপোতে `model-pricing.json` ফাইলটা তৈরি হয়ে যাবে।
-এরপর থেকে এটা প্রতিদিন রাত ৩টা UTC-তে (বাংলাদেশ সময় সকাল ৯টা) নিজে থেকে চলবে।
+(`WORKFLOW_PAT` আগেরটাই থাকবে — unzip-এর জন্য। `DATA_REPO_TOKEN` আর লাগবে না।)
 
-## Vercel সেটআপ (api/model-pricing.js ডিপ্লয় করা)
+### ৩) ফাইল তোলা
+`ai-news-backend-v2.zip` রিপোর রুটে আপলোড করুন। Auto Unzip নিজেই খুলে দেবে, তারপর
+**Deploy API (Cloudflare Worker)** নিজে থেকে চলবে। ধাপ ২ আগে শেষ করুন, নইলে এটা ফেল করবে
+(ফেল করলে Actions → Deploy API → Run workflow চাপুন)।
 
-**১. vercel.com-এ GitHub দিয়ে সাইনআপ করো** (ফ্রি, কার্ড লাগে না)
+### ৪) ফলাফল দেখা
+Actions → **Deploy API** সবুজ হলে Summary-তে URL পাবেন (ফাইলেও: `status/backend-url.txt`)।
+ব্রাউজারে `<URL>/health` খুলে দেখুন `"ok":true` আর news/pricing-এ count আছে কিনা।
 
-**২. "Add New Project" → এই রিপোটা import করো**
-Vercel নিজে থেকেই `api/` ফোল্ডারটা চিনে নেবে, আলাদা কনফিগ লাগবে না।
+### ৫) অ্যাপে URL বসানো
+`ApiConfig.kt`-এর `BACKEND_BASE_URL`-এ ওই URL দিন (শেষে `/` রেখে), তারপর অ্যাপ রিবিল্ড।
 
-**৩. একটা নতুন, শুধু READ-অনুমতির টোকেন বানাও** (ধাপ ২-এর token-টা আলাদা
-রাখা ভালো — GitHub Actions-এর write access লাগে, কিন্তু Vercel-এর শুধু
-read লাগে; আলাদা টোকেন রাখলে কোনো একটা ফাঁস হলেও ক্ষতি কম হবে)
-- Fine-grained token, শুধু `ai-news-data` রিপোতে অ্যাক্সেস
-- Permissions: Contents → **Read-only**
+## প্রতিদিনের কাজ — কিছুই না
+- নিউজ: প্রতি ৩০ মিনিটে, প্রাইসিং: প্রতিদিন। কোনো workflow ফেল করলে GitHub আপনাকে ইমেইল করবে।
+- নিউজ সোর্স বদলাতে `config/sources.json` এডিট করুন (name, url, filter)।
+  `filter: true` মানে শুধু AI-সম্পর্কিত আইটেম রাখা হবে।
+- মডেল লিস্ট বদলাতে `scripts/update-pricing.js`-এর `INCLUDE_PREFIXES`।
+- Actions → Update AI News → Run workflow দিয়ে যেকোনো সময় হাতে চালানো যায়; লগে প্রতিটা ফিডের `OK`/`FAIL` দেখা যায়।
 
-**৪. Vercel প্রজেক্টে Environment Variables যোগ করো**
-Project → Settings → Environment Variables:
-- `GITHUB_DATA_OWNER` = তোমার GitHub ইউজারনেম
-- `GITHUB_DATA_REPO` = `ai-news-data`
-- `GITHUB_DATA_TOKEN` = ধাপ ৩-এর read-only টোকেন
+## সমস্যা হলে
+| লক্ষণ | কারণ / সমাধান |
+|---|---|
+| Deploy: "CLOUDFLARE_API_TOKEN ... সেট করা নেই" | ধাপ ২-এর secret নাম/মান ঠিক নেই |
+| Deploy: subdomain অটো-তৈরি হয়নি | Cloudflare → Workers & Pages একবার খুলুন, তারপর Run workflow |
+| Deploy: 403 / Authentication error | টোকেনে "Edit Cloudflare Workers" টেমপ্লেট নেই, বা ভুল অ্যাকাউন্ট বাছা |
+| `/api/news` → 503 data_not_ready | Update AI News একবার Run workflow করুন |
+| News: "কমপক্ষে ৮টা দরকার" | বেশিরভাগ ফিড FAIL — লগ দেখে `config/sources.json`-এর URL ঠিক করুন |
 
-**৫. Deploy চাপো, তারপর টেস্ট করো**
-ডিপ্লয় শেষে একটা URL পাবে (যেমন `https://ai-news-backend.vercel.app`)।
-ব্রাউজারে `https://তোমার-প্রজেক্ট.vercel.app/api/model-pricing` খুলে
-JSON রেসপন্স আসছে কিনা দেখো।
+## খরচ ও সীমা (ফ্রি)
+Workers Free: দিনে ১ লাখ রিকোয়েস্ট; KV Free: দিনে ১ লাখ রিড, ১০০০ রাইট (আমরা দিনে ~৫০ লিখি)।
+অ্যাপ ১৫ মিনিট ক্যাশ রাখে আর Worker ৫ মিনিটের `Cache-Control` দেয়, তাই সীমা অনেক ইউজার পর্যন্ত যথেষ্ট।
+এখনকার সীমা Cloudflare-এর ডকুমেন্টেশনে দেখে নিন।
 
-**৬. Android অ্যাপে এই URL বসাও**
-`app/src/main/java/com/ainews/app/network/ApiConfig.kt`-এ
-`BACKEND_BASE_URL`-এর মান বদলে তোমার Vercel URL বসাও (শেষে `/` সহ)।
-Discover ট্যাবে এখন "Compare AI Models" কার্ড থেকে এই ডেটা দেখা যাবে,
-`last_updated` তারিখ-সহ।
+## পরে অ্যাডস/সাবস্ক্রিপশন যোগ করলে
+ব্যাকএন্ডে কিছু বদলাতে হবে না। দরকার হলে Cloudflare Workers Paid প্ল্যান ($5/মাস), অ্যাপে SDK/Billing,
+আর প্রাইভেসি পলিসি ও Play Data safety আপডেট।
 
-## আউটপুট ফরম্যাট (`model-pricing.json`)
-```json
-{
-  "last_updated": "2026-09-29T03:00:12.000Z",
-  "source": "https://openrouter.ai/api/v1/models",
-  "model_count": 11,
-  "models": [
-    {
-      "id": "google/gemini-3.8-flash",
-      "name": "Google: Gemini 3.8 Flash",
-      "provider": "google",
-      "input_price_per_million_usd": 0.75,
-      "output_price_per_million_usd": 3.75,
-      "is_free": false,
-      "context_length": 1048576,
-      "intelligence_index": 40.9,
-      "coding_index": 76.3,
-      "input_modalities": ["text", "image", "video", "file", "audio"]
-    }
-  ]
-}
-```
-অ্যাপে "শেষ আপডেট: [তারিখ]" দেখাতে `last_updated` ফিল্ডটাই ব্যবহার করবে।
+## প্রাইভেসি পলিসি (Play Store-এর জন্য)
+`docs/index.html`-এ `YOUR_EMAIL_HERE` বদলে নিজের ইমেইল দিন। তারপর রিপো → Settings → Pages →
+Branch `main`, Folder `/docs` → Save। URL হবে `https://<ইউজারনেম>.github.io/<রিপো>/`। এটাই Play Console-এ দেবেন।
 
-## কোন মডেল দেখাবে সেটা নিয়ন্ত্রণ
-`scripts/fetch-pricing.js`-এর ওপরের দিকে `INCLUDE_PREFIXES` লিস্টটা
-এডিট করো। OpenRouter-এ ৪০০+ মডেল আছে — সবগুলো দেখানো অ্যাপে কাজের না, তাই
-এখানে বড় প্রোভাইডারদের ফ্ল্যাগশিপ মডেলগুলো বেছে রাখা হয়েছে। নতুন গুরুত্বপূর্ণ
-মডেল এলে এই লিস্টে যোগ করতে হবে — এটা স্বয়ংক্রিয়ভাবে "সব নতুন মডেল" ধরবে না,
-ইচ্ছাকৃতভাবে কিউরেটেড রাখা হয়েছে।
-
-## ৬০ দিনের নিষ্ক্রিয়তার ব্যাপারে
-GitHub স্বয়ংক্রিয়ভাবে scheduled workflow বন্ধ করে দেয় যদি এই (কোড) রিপোতে
-৬০ দিন কোনো কমিট না পড়ে। এটা ঠেকাতে workflow-টা প্রতিবার চলার সময় এই রিপোতেই
-একটা ছোট `status/last-run.txt` কমিট করে — তাই আলাদা কিছু করা লাগবে না, এটা
-নিজে থেকেই সবসময় সক্রিয় থাকবে।
-
-## Vercel নিয়ে একটা গুরুত্বপূর্ণ নোট
-তোমরা আগে আলোচনা করেছিলে অ্যাপে বিজ্ঞাপন/সাবস্ক্রিপশন রাখার কথা — সেটা মাথায়
-রেখে: Vercel-এর Hobby (ফ্রি) প্ল্যান তাদের নিজস্ব শর্তানুযায়ী **শুধু ব্যক্তিগত,
-অ-বাণিজ্যিক ব্যবহারের জন্য**। অ্যাপে বিজ্ঞাপন বা পেইড সাবস্ক্রিপশন যোগ করলে
-সেটা "commercial use" হিসেবে গণ্য হয়, তখন Vercel Pro ($20/মাস থেকে শুরু)
-লাগবে। ডেভেলপমেন্ট/টেস্টিং পর্যায়ে Hobby দিয়ে শুরু করাই ঠিক আছে, শুধু এই
-সীমাটা মাথায় রেখো যখন মনিটাইজেশন যোগ করবে।
-
-## পরের ধাপ
-এই ডেটা এখন প্রাইভেট রিপোতে বসছে, আর Vercel ফাংশন/Android স্ক্রিনও লেখা
-হয়ে গেছে (নিচে সেটআপ দেখো)। এখন বাকি:
-1. একই প্যাটার্নে খবরের জন্যও (২০-৩০ মিনিট পরপর, NewsAPI চেক করে) আরেকটা
-   workflow — কাঠামো প্রায় একই থাকবে
-2. প্রকৃত LLM সামারাইজেশন ব্যাকএন্ড (এখনো বাকি, আলাদা আলোচনা)
+## লোকালি টেস্ট (ঐচ্ছিক)
+`npm test` — পার্সারের টেস্ট। `OUTPUT_DIR=out node scripts/update-news.js` — KV-র বদলে ফাইলে লেখে।

@@ -1,0 +1,15 @@
+[
+  { "name": "OpenAI", "url": "https://openai.com/news/rss.xml", "filter": false },
+  { "name": "Google DeepMind", "url": "https://deepmind.google/blog/rss.xml", "filter": false },
+  { "name": "Google AI", "url": "https://blog.google/technology/ai/rss/", "filter": false },
+  { "name": "Hugging Face", "url": "https://huggingface.co/blog/feed.xml", "filter": false },
+  { "name": "NVIDIA", "url": "https://blogs.nvidia.com/blog/category/deep-learning/feed/", "filter": false },
+  { "name": "Microsoft AI", "url": "https://blogs.microsoft.com/ai/feed/", "filter": false },
+  { "name": "TechCrunch", "url": "https://techcrunch.com/category/artificial-intelligence/feed/", "filter": false },
+  { "name": "The Verge", "url": "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml", "filter": false },
+  { "name": "VentureBeat", "url": "https://venturebeat.com/category/ai/feed/", "filter": false },
+  { "name": "MIT Technology Review", "url": "https://www.technologyreview.com/topic/artificial-intelligence/feed", "filter": false },
+  { "name": "Ars Technica", "url": "https://feeds.arstechnica.com/arstechnica/index", "filter": true },
+  { "name": "WIRED", "url": "https://www.wired.com/feed/tag/ai/latest/rss", "filter": false },
+  { "name": "The Guardian", "url": "https://www.theguardian.com/technology/artificialintelligenceai/rss", "filter": false }
+]
