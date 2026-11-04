@@ -4,6 +4,7 @@
 GitHub Actions (cron)  ──►  Cloudflare KV  ──►  Cloudflare Worker  ──►  Android অ্যাপ
  • প্রতি ৩০ মিনিট: RSS → /api/news
  • প্রতিদিন: OpenRouter → /api/model-pricing
+ • নতুন খবরের ২ বাক্যের AI সামারি: Cloudflare Workers AI (ফ্রি অ্যালাউয়েন্স)
 ```
 
 সব কোড ও কনফিগ এই রিপোতে। Cloudflare থেকে শুধু **২টা জিনিস** আনতে হয়, GitHub Secrets-এ বসাতে হয়।
@@ -38,6 +39,17 @@ Actions → **Deploy API** সবুজ হলে Summary-তে URL পাব�
 ### ৫) অ্যাপে URL বসানো
 `ApiConfig.kt`-এর `BACKEND_BASE_URL`-এ ওই URL দিন (শেষে `/` রেখে), তারপর অ্যাপ রিবিল্ড।
 
+## AI সামারি চালু করা (একবার)
+API Token-এ Workers AI-র অনুমতি যোগ করতে হবে (টোকেনের মান বদলায় না, GitHub Secret ছোঁয়ার দরকার নেই):
+Cloudflare → My Profile → API Tokens → আপনার টোকেনের পাশে **Edit** → Permissions → Add more →
+**Account → Workers AI → Edit** → Continue to summary → Update Token।
+
+- শুধু নতুন খবরের সামারি বানানো হয় (প্রতি রানে সর্বোচ্চ ১৫টা), আগেরগুলো `summaries` কী-তে ক্যাশ থাকে। প্রথমে নতুন খবর থেকে শুরু হয়, তাই পুরো ফিড ভরতে কয়েক ঘণ্টা লাগতে পারে।
+- সামারি শিরোনাম + ফিডের অংশবিশেষ থেকে বানানো, মূল আর্টিকেলের পুরো লেখা থেকে না।
+- অনুমতি না থাকলে বা ফ্রি সীমা শেষ হলে workflow ফেল হয় না; লগে `AI ব্যর্থ` লাইন আসে আর অ্যাপ সোর্সের description দেখায়।
+- বন্ধ করতে: `update-news.yml`-এর `env`-এ `AI_SUMMARIES: "off"` দিন। মডেল বদলাতে `AI_MODEL`
+  (Cloudflare-এর মডেল তালিকা বদলায়, তাই কোনোদিন মডেল বন্ধ হলে এটা বদলাবেন)।
+
 ## প্রতিদিনের কাজ — কিছুই না
 - নিউজ: প্রতি ৩০ মিনিটে, প্রাইসিং: প্রতিদিন। কোনো workflow ফেল করলে GitHub আপনাকে ইমেইল করবে।
 - নিউজ সোর্স বদলাতে `config/sources.json` এডিট করুন (name, url, filter)।
@@ -52,6 +64,8 @@ Actions → **Deploy API** সবুজ হলে Summary-তে URL পাব�
 | Deploy: subdomain অটো-তৈরি হয়নি | Cloudflare → Workers & Pages একবার খুলুন, তারপর Run workflow |
 | Deploy: 403 / Authentication error | টোকেনে "Edit Cloudflare Workers" টেমপ্লেট নেই, বা ভুল অ্যাকাউন্ট বাছা |
 | `/api/news` → 503 data_not_ready | Update AI News একবার Run workflow করুন |
+| লগে "AI ব্যর্থ ... 403 Authentication error" | টোকেনে Workers AI: Edit যোগ করুন (উপরের ধাপ) |
+| লগে "AI ব্যর্থ" অন্য এরর | মডেলের নাম বদলে থাকতে পারে — `AI_MODEL` বদলান |
 | News: "কমপক্ষে ৮টা দরকার" | বেশিরভাগ ফিড FAIL — লগ দেখে `config/sources.json`-এর URL ঠিক করুন |
 
 ## খরচ ও সীমা (ফ্রি)

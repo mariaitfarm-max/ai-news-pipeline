@@ -77,3 +77,27 @@ export async function kvPut(nsId, key, value) {
     text: value,
   });
 }
+
+/** KV থেকে মান পড়া; কী না থাকলে null */
+export async function kvGet(nsId, key) {
+  const { token, account } = creds();
+  const res = await fetch(
+    `${API}/accounts/${account}/storage/kv/namespaces/${nsId}/values/${encodeURIComponent(key)}`,
+    { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(30000) }
+  );
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Cloudflare KV GET ${key} -> ${res.status}`);
+  return await res.text();
+}
+
+/** Workers AI চালানো (REST)। মডেল-পাথে "/" থাকে (@cf/meta/...), তাই encode করা হয় না */
+export async function aiRun(model, input) {
+  const { account } = creds();
+  const r = await call(`/accounts/${account}/ai/run/${model}`, { method: "POST", json: input });
+  if (r && typeof r === "object") {
+    if (typeof r.response === "string") return r.response;
+    const c = r.choices && r.choices[0] && r.choices[0].message && r.choices[0].message.content;
+    if (typeof c === "string") return c;
+  }
+  throw new Error("Workers AI: অপ্রত্যাশিত রেসপন্স ফরম্যাট");
+}

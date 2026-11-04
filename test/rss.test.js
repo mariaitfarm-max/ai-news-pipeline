@@ -65,3 +65,22 @@ test("titleKey and truncate", () => {
   assert.ok(truncate("word ".repeat(200), 100).length <= 101);
   assert.equal(truncate("short", 100), "short");
 });
+
+import { cleanSummary, isAuthError } from "../scripts/lib/ai.js";
+
+test("cleanSummary: strips preface/quotes/markdown, rejects junk, caps length", () => {
+  assert.equal(
+    cleanSummary('Here is a summary: "OpenAI released a new model. It is faster and cheaper than before."'),
+    "OpenAI released a new model. It is faster and cheaper than before."
+  );
+  assert.equal(cleanSummary("**Summary:** Nvidia announced new chips for data centers today."), "Nvidia announced new chips for data centers today.");
+  assert.equal(cleanSummary("ok"), null);
+  assert.equal(cleanSummary(undefined), null);
+  const long = cleanSummary("A sentence here. ".repeat(60));
+  assert.ok(long.length <= 361);
+});
+
+test("isAuthError", () => {
+  assert.ok(isAuthError(new Error("Cloudflare API POST /x -> 403 10000: Authentication error")));
+  assert.ok(!isAuthError(new Error("-> 500 internal")));
+});

@@ -7,7 +7,8 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { parseFeed, normalizeUrl, titleKey } from "./lib/rss.js";
 import { truncate } from "./lib/text.js";
-import { publish } from "./lib/publish.js";
+import { publish, readKey } from "./lib/publish.js";
+import { summarize, isAuthError, DEFAULT_MODEL } from "./lib/ai.js";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SOURCES = JSON.parse(fs.readFileSync(path.join(root, "config", "sources.json"), "utf8"));
@@ -17,6 +18,10 @@ const PER_FEED = 15;
 const TOTAL = 100;
 const SNIPPET = 400;
 const MIN_ARTICLES = Number(process.env.MIN_ARTICLES || 8);
+const AI_ON = String(process.env.AI_SUMMARIES || "on").toLowerCase() !== "off";
+const AI_MODEL = process.env.AI_MODEL || DEFAULT_MODEL;
+const MAX_NEW_SUMMARIES = Number(process.env.MAX_NEW_SUMMARIES || 15);
+const MIN_TEXT_FOR_AI = 80;
 const UA = "AINewsBot/1.0 (+https://github.com/mariaitfarm-max/ai-news-pipeline)";
 
 const AI_RE =
@@ -49,6 +54,60 @@ async function loadSource(src) {
   return items.map((it) => ({ ...it, source: src.name, filter: !!src.filter }));
 }
 
+async function addSummaries(articles, fullText) {
+  if (!AI_ON) {
+    console.log("AI সামারি বন্ধ (AI_SUMMARIES=off)");
+    return;
+  }
+  const cache = (await readKey("summaries")) || {};
+  const fresh = {};
+  let cached = 0;
+  const todo = [];
+  for (const a of articles) {
+    if (typeof cache[a.url] === "string" && cache[a.url]) {
+      a.aiSummary = cache[a.url];
+      fresh[a.url] = cache[a.url];
+      cached++;
+    } else if ((fullText.get(a) || "").length >= MIN_TEXT_FOR_AI) {
+      todo.push(a);
+    }
+  }
+  const batch = todo.slice(0, MAX_NEW_SUMMARIES); // articles নতুন→পুরনো ক্রমে আছে
+  let done = 0;
+  let failed = 0;
+  let stop = false;
+  let idx = 0;
+  async function worker() {
+    while (!stop && idx < batch.length) {
+      const a = batch[idx++];
+      try {
+        const sum = await summarize(AI_MODEL, a.title, fullText.get(a));
+        if (sum) {
+          a.aiSummary = sum;
+          fresh[a.url] = sum;
+          done++;
+        } else {
+          failed++;
+        }
+      } catch (e) {
+        failed++;
+        console.warn(`AI ব্যর্থ: ${String(e.message || e).slice(0, 200)}`);
+        if (isAuthError(e)) {
+          stop = true;
+          console.warn("→ API Token-এ Account → Workers AI → Edit অনুমতি যোগ করুন (README দেখুন)। সামারি ছাড়াই চলছে।");
+        }
+      }
+    }
+  }
+  await Promise.all([worker(), worker(), worker()]);
+  console.log(`AI সামারি: ক্যাশ ${cached}, নতুন ${done}, ব্যর্থ ${failed}, বাকি ${Math.max(0, todo.length - batch.length)}`);
+
+  // শুধু বর্তমান ফিডের আর্টিকেলের সামারি রাখা হয় (ক্যাশ ছোট থাকে)
+  if (done > 0 || Object.keys(cache).length !== Object.keys(fresh).length) {
+    await publish("summaries", fresh);
+  }
+}
+
 async function main() {
   const now = Date.now();
   const results = await Promise.allSettled(SOURCES.map(loadSource));
@@ -77,6 +136,7 @@ async function main() {
   const seenUrl = new Set();
   const seenTitle = new Set();
   const articles = [];
+  const fullText = new Map(); // article -> পুরো description (শুধু AI-র ইনপুট, সেভ হয় না)
   for (const it of all.sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt))) {
     const uk = normalizeUrl(it.url);
     const tk = titleKey(it.title);
@@ -88,11 +148,13 @@ async function main() {
       author: null,
       title: it.title,
       description: truncate(it.description, SNIPPET),
+      aiSummary: null,
       url: uk,
       urlToImage: it.imageUrl,
       publishedAt: it.publishedAt,
       content: null,
     });
+    fullText.set(articles[articles.length - 1], it.description);
     if (articles.length >= TOTAL) break;
   }
 
@@ -102,6 +164,13 @@ async function main() {
       `মাত্র ${articles.length}টা আর্টিকেল (কমপক্ষে ${MIN_ARTICLES} দরকার) — আগের ডেটা না বদলে থামছি। ` +
         "উপরের FAIL লাইনগুলো দেখে config/sources.json ঠিক করো।"
     );
+  }
+
+  try {
+    await addSummaries(articles, fullText);
+  } catch (e) {
+    // সামারি ব্যর্থ হলেও খবরের ফিড প্রকাশ হবে
+    console.warn("সামারি ধাপ ব্যর্থ, বাদ দিয়ে এগোচ্ছি:", String((e && e.message) || e));
   }
 
   await publish("news", {
