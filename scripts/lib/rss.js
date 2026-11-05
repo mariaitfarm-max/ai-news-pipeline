@@ -67,10 +67,11 @@ function pickImage(block, htmlSource) {
     (htmlSource ? (htmlSource.match(/<img\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/i) || [])[1] : null);
   if (!cand) return null;
   const url = decodeEntities(cand);
+  if (/(pixel|1x1|spacer|beacon|tracker|feedburner|\/ads?\/)/i.test(url)) return null;
   return /^https:\/\//i.test(url) ? url : null;
 }
 
-/** @returns {{title:string,url:string,description:string,publishedAt:string,imageUrl:string|null}[]} */
+/** @returns {{title:string,url:string,description:string,content:string,publishedAt:string,imageUrl:string|null}[]} */
 export function parseFeed(xml) {
   const items = [];
   for (const m of xml.matchAll(/<(item|entry)(?:\s[^>]*)?>([\s\S]*?)<\/\1>/gi)) {
@@ -88,6 +89,7 @@ export function parseFeed(xml) {
 
     const descRaw =
       tagRaw(block, "description") || tagRaw(block, "summary") || tagRaw(block, "content:encoded") || tagRaw(block, "content");
+    const fullRaw = tagRaw(block, "content:encoded") || tagRaw(block, "content");
     const htmlSource = descRaw ? unwrap(descRaw) : "";
     const imgHtml = htmlSource.includes("<") ? htmlSource : decodeEntities(htmlSource);
 
@@ -95,6 +97,8 @@ export function parseFeed(xml) {
       title,
       url,
       description: descRaw ? toPlain(descRaw) : "",
+      // ফিডে পুরো/বড় লেখা থাকলে (শুধু AI-র ইনপুটের জন্য; সেভ বা প্রকাশ হয় না)
+      content: fullRaw ? toPlain(fullRaw) : "",
       publishedAt: d.toISOString(),
       imageUrl: pickImage(block, imgHtml),
     });

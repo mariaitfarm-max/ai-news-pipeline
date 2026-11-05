@@ -66,7 +66,8 @@ test("titleKey and truncate", () => {
   assert.equal(truncate("short", 100), "short");
 });
 
-import { cleanSummary, isAuthError } from "../scripts/lib/ai.js";
+import { cleanSummary, parseAi, isAuthError } from "../scripts/lib/ai.js";
+import { parseOgImage } from "../scripts/lib/og.js";
 
 test("cleanSummary: strips preface/quotes/markdown, rejects junk, caps length", () => {
   assert.equal(
@@ -76,11 +77,30 @@ test("cleanSummary: strips preface/quotes/markdown, rejects junk, caps length", 
   assert.equal(cleanSummary("**Summary:** Nvidia announced new chips for data centers today."), "Nvidia announced new chips for data centers today.");
   assert.equal(cleanSummary("ok"), null);
   assert.equal(cleanSummary(undefined), null);
-  const long = cleanSummary("A sentence here. ".repeat(60));
+  const long = cleanSummary("A sentence here. ".repeat(60), 360);
   assert.ok(long.length <= 361);
 });
 
 test("isAuthError", () => {
   assert.ok(isAuthError(new Error("Cloudflare API POST /x -> 403 10000: Authentication error")));
   assert.ok(!isAuthError(new Error("-> 500 internal")));
+});
+
+test("parseAi: summary + points, with and without labels", () => {
+  const r = parseAi("SUMMARY: OpenAI shipped a faster model on Tuesday. Developers get lower prices.\nPOINTS:\n- Faster and cheaper model\n- Aimed at developers\n1. Available in the API today");
+  assert.equal(r.summary, "OpenAI shipped a faster model on Tuesday. Developers get lower prices.");
+  assert.deepEqual(r.points, ["Faster and cheaper model", "Aimed at developers", "Available in the API today"]);
+  const plain = parseAi("A plain paragraph summary that has no labels but is long enough to keep.");
+  assert.equal(plain.points.length, 0);
+  assert.equal(parseAi("hi"), null);
+});
+
+test("parseOgImage: attribute order, relative URL, http rejected, twitter fallback", () => {
+  assert.equal(
+    parseOgImage('<meta content="/img/a.jpg" property="og:image"><title>x</title>', "https://news.example.com/post/1"),
+    "https://news.example.com/img/a.jpg"
+  );
+  assert.equal(parseOgImage('<meta property="og:image" content="http://a.com/x.jpg">', "https://a.com"), null);
+  assert.equal(parseOgImage('<meta name="twitter:image" content="https://a.com/t.png?x=1&amp;y=2">', "https://a.com"), "https://a.com/t.png?x=1&y=2");
+  assert.equal(parseOgImage("<html></html>", "https://a.com"), null);
 });
