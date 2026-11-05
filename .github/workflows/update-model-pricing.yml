@@ -2,8 +2,8 @@ name: Update AI Model Pricing
 
 "on":
   schedule:
-    # প্রতিদিন একবার, UTC রাত ৩টায় (বাংলাদেশ সময় সকাল ৯টা)
-    - cron: "0 3 * * *"
+    # দিনে দুবার (UTC ০৩:২৩ ও ১৫:২৩); ঠিক ঘণ্টার শুরু এড়ানো হয়েছে কারণ তখন শিডিউল দেরি/বাদ পড়ে
+    - cron: "23 3,15 * * *"
   workflow_dispatch:
 
 permissions:

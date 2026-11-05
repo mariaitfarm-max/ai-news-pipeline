@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { parseFeed, normalizeUrl, titleKey } from "../scripts/lib/rss.js";
-import { truncate } from "../scripts/lib/text.js";
+import { truncate, cleanBoilerplate } from "../scripts/lib/text.js";
 
 const RSS = `<?xml version="1.0"?>
 <rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/" xmlns:content="http://purl.org/rss/1.0/modules/content/">
@@ -103,4 +103,11 @@ test("parseOgImage: attribute order, relative URL, http rejected, twitter fallba
   assert.equal(parseOgImage('<meta property="og:image" content="http://a.com/x.jpg">', "https://a.com"), null);
   assert.equal(parseOgImage('<meta name="twitter:image" content="https://a.com/t.png?x=1&amp;y=2">', "https://a.com"), "https://a.com/t.png?x=1&y=2");
   assert.equal(parseOgImage("<html></html>", "https://a.com"), null);
+});
+
+test("cleanBoilerplate strips trailing feed junk only", () => {
+  assert.equal(cleanBoilerplate("Big news today about AI. Continue reading..."), "Big news today about AI.");
+  assert.equal(cleanBoilerplate("Big news. Read more…"), "Big news.");
+  assert.equal(cleanBoilerplate("Story text here. The post Big news appeared first on TechCrunch."), "Story text here.");
+  assert.equal(cleanBoilerplate("Plain text with nothing to strip."), "Plain text with nothing to strip.");
 });

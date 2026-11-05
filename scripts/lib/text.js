@@ -41,3 +41,11 @@ export function truncate(s, max) {
   const base = i > max * 0.6 ? cut.slice(0, i) : cut;
   return base.replace(/[\s.,;:!?-]+$/, "") + "…";
 }
+
+/** ফিডের বাড়তি লেজ ছাঁটা: "Continue reading…", "Read more…", "The post … appeared first on …" */
+export function cleanBoilerplate(s) {
+  return s
+    .replace(/\s*The post\s[\s\S]{0,300}?\sappeared first on\s[\s\S]{0,120}$/i, "")
+    .replace(/\s*(?:Continue reading|Read more|Read the full (?:story|article)|Click here to read more)[\s….\u2026]*$/i, "")
+    .trim();
+}

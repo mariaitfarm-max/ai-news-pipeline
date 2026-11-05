@@ -6,7 +6,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { parseFeed, normalizeUrl, titleKey } from "./lib/rss.js";
-import { truncate } from "./lib/text.js";
+import { truncate, cleanBoilerplate } from "./lib/text.js";
 import { publish, readKey } from "./lib/publish.js";
 import { summarize, isAuthError, DEFAULT_MODEL } from "./lib/ai.js";
 import { fetchOgImage, pool } from "./lib/og.js";
@@ -179,7 +179,7 @@ async function main() {
     if (seenUrl.has(uk) || seenTitle.has(tk)) continue;
     seenUrl.add(uk);
     seenTitle.add(tk);
-    const best = it.content && it.content.length > it.description.length ? it.content : it.description;
+    const best = cleanBoilerplate(it.content && it.content.length > it.description.length ? it.content : it.description);
     const art = {
       source: { id: null, name: it.source },
       author: null,
