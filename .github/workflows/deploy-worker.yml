@@ -60,7 +60,7 @@ jobs:
           echo "Health check ফেল — workers.dev চালু হতে কয়েক মিনিট লাগতে পারে, আবার Run workflow দিন"
           exit 1
 
-      - name: URL সেভ + পুরনো Vercel ফাইল পরিষ্কার
+      - name: URL সেভ
         run: |
           URL="${{ steps.prep.outputs.worker_url }}"
           echo "### ✅ API চালু" >> "$GITHUB_STEP_SUMMARY"
@@ -70,10 +70,17 @@ jobs:
           echo "\`$URL/\`" >> "$GITHUB_STEP_SUMMARY"
           mkdir -p status
           echo "$URL/" > status/backend-url.txt
-          git rm -rq --ignore-unmatch api vercel.json scripts/fetch-pricing.js
           git config user.name "deploy-bot"
           git config user.email "actions@github.com"
           git add status/backend-url.txt
-          git diff --staged --quiet || git commit -m "chore: backend url + cleanup legacy files"
+          git diff --staged --quiet || git commit -m "chore: backend url"
           git pull --rebase origin "${{ github.ref_name }}" || true
           git push || true
+
+      - name: ব্যর্থ হলে Telegram
+        if: failure()
+        run: |
+          node scripts/notify.js "❌ AI News: Worker deploy ফেল করেছে — ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}

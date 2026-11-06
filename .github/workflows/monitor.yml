@@ -1,0 +1,31 @@
+name: Monitor
+
+# /health দেখে সমস্যা (পুরনো ডেটা, ফিড ফেল, AI ফেল, API বন্ধ) হলে Telegram-এ জানায়।
+# একই সমস্যা একবারই জানায়, ঠিক হলে "ঠিক হয়েছে" পাঠায়, না হলে ১২ ঘণ্টা পর রিমাইন্ডার।
+"on":
+  schedule:
+    - cron: "11,41 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: node scripts/monitor.js
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}

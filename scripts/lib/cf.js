@@ -78,6 +78,32 @@ export async function kvPut(nsId, key, value) {
   });
 }
 
+/** KV-র সব কী-এর নাম */
+export async function kvList(nsId) {
+  const { account } = creds();
+  const keys = [];
+  let cursor = "";
+  for (let i = 0; i < 20; i++) {
+    const q = `?limit=1000${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
+    const { token } = creds();
+    const res = await fetch(`${API}/accounts/${account}/storage/kv/namespaces/${nsId}/keys${q}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(30000),
+    });
+    if (!res.ok) throw new Error(`Cloudflare KV list -> ${res.status}`);
+    const data = await res.json();
+    for (const k of data.result || []) keys.push(k.name);
+    cursor = data.result_info && data.result_info.cursor;
+    if (!cursor) break;
+  }
+  return keys;
+}
+
+export async function kvDelete(nsId, key) {
+  const { account } = creds();
+  await call(`/accounts/${account}/storage/kv/namespaces/${nsId}/values/${encodeURIComponent(key)}`, { method: "DELETE" });
+}
+
 /** KV থেকে মান পড়া; কী না থাকলে null */
 export async function kvGet(nsId, key) {
   const { token, account } = creds();

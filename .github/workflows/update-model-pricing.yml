@@ -7,7 +7,7 @@ name: Update AI Model Pricing
   workflow_dispatch:
 
 permissions:
-  contents: write # keepalive কমিটের জন্য
+  contents: read
 
 concurrency:
   group: update-pricing
@@ -29,14 +29,13 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
-      - name: Keepalive (৬০ দিন নিষ্ক্রিয়তায় GitHub শিডিউল বন্ধ করে দেয়, তাই দিনে একটা কমিট)
+      - name: ব্যর্থ হলে Telegram
+        if: failure()
         run: |
-          mkdir -p status
-          echo "Last run: $(date -u +'%Y-%m-%d %H:%M UTC')" > status/last-run.txt
-          git config user.name "pricing-bot"
-          git config user.email "actions@github.com"
-          git add status/last-run.txt
-          git diff --staged --quiet || git commit -m "chore: keepalive $(date -u +'%Y-%m-%d')"
-          git pull --rebase origin "${{ github.ref_name }}" || true
-          git push
+          node scripts/notify.js "❌ AI News: মডেল-দাম আপডেট ফেল করেছে — ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}

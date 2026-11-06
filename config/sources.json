@@ -10,5 +10,11 @@
   {"name": "MIT Technology Review", "url": "https://www.technologyreview.com/topic/artificial-intelligence/feed", "filter": false},
   {"name": "Ars Technica", "url": "https://feeds.arstechnica.com/arstechnica/index", "filter": true},
   {"name": "WIRED", "url": "https://www.wired.com/feed/tag/ai/latest/rss", "filter": false},
-  {"name": "The Guardian", "url": "https://www.theguardian.com/technology/artificialintelligenceai/rss", "filter": false}
+  {"name": "The Guardian", "url": "https://www.theguardian.com/technology/artificialintelligenceai/rss", "filter": false},
+  {"name": "The Decoder", "url": "https://the-decoder.com/feed/", "filter": false},
+  {"name": "MarkTechPost", "url": "https://www.marktechpost.com/feed/", "filter": false},
+  {"name": "AWS Machine Learning", "url": "https://aws.amazon.com/blogs/machine-learning/feed/", "filter": false},
+  {"name": "Microsoft Research", "url": "https://www.microsoft.com/en-us/research/feed/", "filter": true},
+  {"name": "Google Research", "url": "https://research.google/blog/rss/", "filter": true},
+  {"name": "IEEE Spectrum AI", "url": "https://spectrum.ieee.org/feeds/topic/artificial-intelligence.rss", "filter": false}
 ]

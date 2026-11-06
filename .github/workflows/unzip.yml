@@ -1,14 +1,24 @@
 name: Auto Unzip
 
-on: [push]
+# রিপোর রুটে .zip আপলোড করলে নিজে খুলে ফেলে (ফোন থেকে আপডেটের জন্য)।
+# নিরাপত্তা: শুধু main-এ, শুধু রুটের .zip পুশ হলে চলে — তাই PAT অকারণে ব্যবহার হয় না।
+# WORKFLOW_PAT: "workflow" স্কোপ-সহ Personal Access Token (শুধু এই রিপোর জন্য, মেয়াদ সীমিত রাখো)।
+"on":
+  push:
+    branches: [main]
+    paths: ["*.zip"]
 
 permissions:
   contents: write
 
+concurrency:
+  group: unzip
+  cancel-in-progress: false
+
 jobs:
   unzip:
     runs-on: ubuntu-latest
-    if: ${{!contains(github.event.head_commit.message, 'Auto extracted') }}
+    if: ${{ !contains(github.event.head_commit.message, 'Auto extracted') }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -17,10 +27,17 @@ jobs:
       - name: Unzip to root
         run: |
           shopt -s nullglob
+          found=0
           for file in *.zip; do
-            unzip -o "$file" -d.
+            unzip -o "$file" -d .
             rm "$file"
+            found=1
           done
+          if [ "$found" = "1" ]; then
+            # পুরনো ভার্সনের অবশিষ্ট ফাইল
+            rm -f .github/workflows/H
+            rm -rf docs
+          fi
 
       - name: Commit
         run: |

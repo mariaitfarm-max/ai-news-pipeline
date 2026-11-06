@@ -24,10 +24,12 @@ jobs:
         with:
           node-version: "22"
 
+      # ব্যর্থতার Telegram সতর্কতা এখানে নেই (প্রতি ৩০ মিনিটে স্প্যাম হতো) —
+      # ডেটা ২ ঘণ্টার বেশি পুরনো হলে monitor.yml একবার জানায়।
       - name: RSS টেনে KV-তে লেখা
         run: node scripts/update-news.js
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           # AI_SUMMARIES: "off"   # সামারি বন্ধ করতে লাইনের শুরুর # তুলে দিন
-          # AI_MODEL: "@cf/meta/llama-3.1-8b-instruct"
+          # AI_MODEL: "@cf/meta/llama-3.1-8b-instruct-fp8"   # ডিফল্ট তালিকার আগে এটা চেষ্টা হবে

@@ -2,7 +2,14 @@
 
 import { aiRun } from "./cf.js";
 
-export const DEFAULT_MODEL = "@cf/meta/llama-3.1-8b-instruct";
+// ⚠️ @cf/meta/llama-3.1-8b-instruct Cloudflare ২০২৬-০৫-৩০ এ বন্ধ করেছে (এরর 5028)।
+// তাই চালু থাকা -fp8 ভার্সন প্রথমে; সেটাও বন্ধ হলে পরেরটায় নিজে থেকে সরে যায় (createSummarizer)।
+export const DEFAULT_MODELS = [
+  "@cf/meta/llama-3.1-8b-instruct-fp8",
+  "@cf/zai-org/glm-4.7-flash",
+  "@cf/meta/llama-3.2-3b-instruct",
+];
+export const DEFAULT_MODEL = DEFAULT_MODELS[0];
 
 function systemPrompt(rich) {
   const summaryRule = rich
@@ -65,21 +72,73 @@ export function parseAi(raw) {
   return { summary, points };
 }
 
-export async function summarize(model, title, text) {
+async function summarizeWith(run, model, title, text) {
   const body = text.slice(0, 3000);
   const rich = body.length >= 400;
-  const out = await aiRun(model, {
+  const out = await run(model, {
     messages: [
       { role: "system", content: systemPrompt(rich) },
       { role: "user", content: `Headline: ${title}\n\nExcerpt: ${body}` },
     ],
-    max_tokens: 320,
+    max_tokens: 400, // মডেলের ডিফল্ট ২৫৬ — ছোট পড়ে POINTS কেটে যায়
     temperature: 0.2,
   });
   return parseAi(out);
 }
 
-/** মডেল-ত্রুটি বনাম অনুমতি-সমস্যা আলাদা করা (অনুমতি না থাকলে বাকি আর্টিকেলে চেষ্টা বৃথা) */
+function msg(e) {
+  return String((e && e.message) || e);
+}
+
+/** অনুমতি-সমস্যা (বাকি আর্টিকেলে চেষ্টা বৃথা) */
 export function isAuthError(e) {
-  return /\b(401|403)\b|authentication|unauthorized|permission/i.test(String((e && e.message) || e));
+  return /\b(401|403)\b|authentication|unauthorized|permission/i.test(msg(e));
+}
+
+/** দৈনিক ফ্রি সীমা/রেট-লিমিট শেষ (আজ আর চেষ্টা বৃথা) */
+export function isQuotaError(e) {
+  return /\b(429|3036|3040)\b|neurons|daily free allocation|rate limit|too many requests/i.test(msg(e));
+}
+
+/** মডেল বন্ধ/সরানো হয়েছে (পরের মডেলে যেতে হবে) */
+export function isModelGone(e) {
+  return /\b5028\b|deprecated|no such model|model not found|unknown model|not available|unavailable/i.test(msg(e));
+}
+
+/**
+ * মডেল-তালিকা নিয়ে সামারাইজার: কোনো মডেল বন্ধ হলে (5028 ইত্যাদি) নিজে পরেরটায় যায়।
+ * run = (model, input) => Promise<string> (টেস্টে নকল দেওয়া যায়)
+ */
+export function createSummarizer(models, run = aiRun) {
+  const list = [...new Set(models.filter(Boolean))];
+  if (list.length === 0) throw new Error("কোনো AI মডেল দেওয়া নেই");
+  let idx = 0;
+  const stats = { model: list[0], skipped: [] };
+  return {
+    stats,
+    async summarize(title, text) {
+      for (;;) {
+        const model = list[idx];
+        try {
+          const r = await summarizeWith(run, model, title, text);
+          stats.model = model;
+          return r;
+        } catch (e) {
+          if (isModelGone(e) && !isQuotaError(e) && !isAuthError(e)) {
+            if (list[idx] === model) {
+              stats.skipped.push(model);
+              console.warn(`AI মডেল বন্ধ/অনুপলব্ধ: ${model} — পরেরটা চেষ্টা করছি`);
+              idx++;
+            }
+            if (idx >= list.length) {
+              idx = list.length - 1; // সব মডেল বন্ধ — ত্রুটি উপরে যাক
+              throw e;
+            }
+            continue; // পরের (বা অন্য থ্রেডের বদলানো) মডেলে আবার
+          }
+          throw e;
+        }
+      }
+    },
+  };
 }

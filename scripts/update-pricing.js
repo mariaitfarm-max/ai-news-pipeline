@@ -3,6 +3,7 @@
 // আউটপুট ফরম্যাট আগের model-pricing.json-এর হুবহু একই — অ্যাপে কোনো বদল লাগে না।
 
 import { publish } from "./lib/publish.js";
+import { sendTelegram } from "./lib/notify.js";
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/models";
 const MIN_MODELS = 3; // এর কম এলে কিছু একটা ভুল — আগের ডেটা অক্ষত থাকবে
@@ -58,6 +59,13 @@ async function main() {
       `মাত্র ${rows.length}টা মডেল মিলেছে (কমপক্ষে ${MIN_MODELS} দরকার) — আগের ডেটা না বদলে থামছি। ` +
         "INCLUDE_PREFIXES লিস্ট বা OpenRouter-এর ফরম্যাট দেখো।"
     );
+  }
+
+  // কোনো প্রিফিক্সে একটা মডেলও না মিললে (নাম বদলেছে/সরে গেছে) স্পষ্ট সতর্কতা + Telegram
+  const missing = INCLUDE_PREFIXES.filter((p) => !rows.some((r) => r.id.startsWith(p)));
+  if (missing.length) {
+    console.warn(`⚠️ এই প্রিফিক্সগুলোয় কোনো মডেল মেলেনি: ${missing.join(", ")}`);
+    await sendTelegram(`⚠️ AI News: মডেল-তালিকায় ${missing.length}টা প্রিফিক্স মেলেনি (update-pricing.js এডিট করো):\n${missing.join("\n")}`);
   }
 
   rows.sort((a, b) => {

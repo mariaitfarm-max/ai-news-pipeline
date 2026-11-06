@@ -5,7 +5,7 @@
 
 const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",
-  "access-control-allow-origin": "*",
+  "x-content-type-options": "nosniff",
 };
 
 function json(obj, status = 200, extra = {}) {
@@ -25,14 +25,23 @@ async function serveKey(env, key) {
   });
 }
 
-async function summary(env, key, stampField, countField) {
-  const body = await env.AINEWS.get(key, { cacheTtl: 60 });
+async function summary(env, keys, stampField, countField) {
+  let body = null;
+  for (const key of keys) {
+    body = await env.AINEWS.get(key, { cacheTtl: 60 });
+    if (body !== null) break;
+  }
   if (body === null) return null;
   try {
     const o = JSON.parse(body);
-    return { updated_at: o[stampField] || null, count: o[countField] ?? null };
+    return {
+      updated_at: o[stampField] || null,
+      count: o[countField] ?? null,
+      feeds: o.feedStats ?? null,
+      ai: o.ai ?? null,
+    };
   } catch {
-    return { updated_at: null, count: null };
+    return { updated_at: null, count: null, feeds: null, ai: null };
   }
 }
 
@@ -49,8 +58,8 @@ export default {
         return serveKey(env, "pricing");
       case "/health": {
         const [news, pricing] = await Promise.all([
-          summary(env, "news", "generatedAt", "totalResults"),
-          summary(env, "pricing", "last_updated", "model_count"),
+          summary(env, ["news_meta", "news"], "generatedAt", "totalResults"),
+          summary(env, ["pricing"], "last_updated", "model_count"),
         ]);
         return json({ ok: true, news, pricing }, 200, { "cache-control": "no-store" });
       }

@@ -1,0 +1,58 @@
+name: Daily Cleanup
+
+# প্রতিদিন নিজে চলে:
+#  • ৭ দিনের পুরনো Actions রান মোছে (RETENTION_DAYS দিয়ে বদলানো যায়)
+#  • KV-র অচেনা কী ও বাতিল ক্যাশ এন্ট্রি মোছে
+#  • সপ্তাহে একবার ছোট কমিট (৬০ দিন নিষ্ক্রিয় থাকলে GitHub পাবলিক রিপোর শিডিউল বন্ধ করে দেয়)
+"on":
+  schedule:
+    - cron: "41 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write # keepalive কমিট
+  actions: write # পুরনো রান মোছা
+
+concurrency:
+  group: cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: রান + KV পরিষ্কার
+        run: node scripts/cleanup.js
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RETENTION_DAYS: "7"
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Keepalive (সোমবারে একবার)
+        run: |
+          if [ "$(date -u +%u)" = "1" ]; then
+            mkdir -p status
+            echo "Last cleanup: $(date -u +'%Y-%m-%d %H:%M UTC')" > status/last-run.txt
+            git config user.name "cleanup-bot"
+            git config user.email "actions@github.com"
+            git add status/last-run.txt
+            git diff --staged --quiet || git commit -m "chore: weekly keepalive"
+            git pull --rebase origin "${{ github.ref_name }}" || true
+            git push || true
+          fi
+
+      - name: ব্যর্থ হলে Telegram
+        if: failure()
+        run: |
+          node scripts/notify.js "❌ AI News: দৈনিক cleanup ফেল করেছে — ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}

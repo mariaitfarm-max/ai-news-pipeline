@@ -8,7 +8,7 @@ import { fileURLToPath } from "url";
 import { parseFeed, normalizeUrl, titleKey } from "./lib/rss.js";
 import { truncate, cleanBoilerplate } from "./lib/text.js";
 import { publish, readKey } from "./lib/publish.js";
-import { summarize, isAuthError, DEFAULT_MODEL } from "./lib/ai.js";
+import { createSummarizer, isAuthError, isQuotaError, DEFAULT_MODELS } from "./lib/ai.js";
 import { fetchOgImage, pool } from "./lib/og.js";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -16,15 +16,19 @@ const SOURCES = JSON.parse(fs.readFileSync(path.join(root, "config", "sources.js
 
 const MAX_AGE_MS = 7 * 24 * 3600 * 1000;
 const PER_FEED = 15;
-const TOTAL = 100;
+const TOTAL = 120;
 const SNIPPET = 500;
 const MIN_ARTICLES = Number(process.env.MIN_ARTICLES || 8);
 const AI_ON = String(process.env.AI_SUMMARIES || "on").toLowerCase() !== "off";
-const AI_MODEL = process.env.AI_MODEL || DEFAULT_MODEL;
+// AI_MODEL দিলে সেটা আগে, তারপর ডিফল্ট তালিকা (বন্ধ মডেল নিজে বাদ পড়ে)
+const AI_MODELS = [process.env.AI_MODEL, ...DEFAULT_MODELS].filter(Boolean);
 const MAX_NEW_SUMMARIES = Number(process.env.MAX_NEW_SUMMARIES || 25);
 const MAX_IMAGE_LOOKUPS = Number(process.env.MAX_IMAGE_LOOKUPS || 30);
 const MIN_TEXT_FOR_AI = 80;
 const UA = "AINewsBot/1.0 (+https://github.com/mariaitfarm-max/ai-news-pipeline)";
+
+/** /health ও মনিটরের জন্য শেষ রানের পরিসংখ্যান */
+let aiStats = { enabled: AI_ON, model: null, cached: 0, done: 0, failed: 0, attempted: 0, stopped: null, skippedModels: [] };
 
 const AI_RE =
   /\b(AI|A\.I\.|LLMs?|AGI|artificial intelligence|machine learning|deep learning|neural|generative|chatbots?|openai|anthropic|chatgpt|gpt-?\d\w*|claude|gemini|deepmind|copilot|mistral|llama|nvidia|hugging ?face|grok|midjourney)\b/i;
@@ -63,6 +67,7 @@ async function addSummaries(articles, fullText) {
     return;
   }
   const cache = (await readKey("summaries_v2")) || {};
+  const summarizer = createSummarizer(AI_MODELS);
   const fresh = {};
   let cached = 0;
   const todo = [];
@@ -84,7 +89,7 @@ async function addSummaries(articles, fullText) {
   await pool(batch, 3, async (a) => {
     if (stop) return;
     try {
-      const r = await summarize(AI_MODEL, a.title, fullText.get(a));
+      const r = await summarizer.summarize(a.title, fullText.get(a));
       if (r) {
         a.aiSummary = r.summary;
         a.aiPoints = r.points;
@@ -96,13 +101,28 @@ async function addSummaries(articles, fullText) {
     } catch (e) {
       failed++;
       console.warn(`AI ব্যর্থ: ${String(e.message || e).slice(0, 200)}`);
-      if (isAuthError(e)) {
+      if (isQuotaError(e)) {
         stop = true;
+        aiStats.stopped = "quota";
+        console.warn("→ Workers AI-র দৈনিক ফ্রি সীমা শেষ — আজ আর নতুন সামারি হবে না (UTC মধ্যরাতে রিসেট)।");
+      } else if (isAuthError(e)) {
+        stop = true;
+        aiStats.stopped = "auth";
         console.warn("→ API Token-এ Account → Workers AI → Edit অনুমতি যোগ করুন (README দেখুন)। সামারি ছাড়াই চলছে।");
       }
     }
   });
-  console.log(`AI সামারি: ক্যাশ ${cached}, নতুন ${done}, ব্যর্থ ${failed}, বাকি ${Math.max(0, todo.length - batch.length)}`);
+  aiStats = {
+    enabled: true,
+    model: summarizer.stats.model,
+    cached,
+    done,
+    failed,
+    attempted: batch.length,
+    stopped: aiStats.stopped,
+    skippedModels: summarizer.stats.skipped,
+  };
+  console.log(`AI সামারি (${summarizer.stats.model}): ক্যাশ ${cached}, নতুন ${done}, ব্যর্থ ${failed}, বাকি ${Math.max(0, todo.length - batch.length)}`);
   if (done > 0 || Object.keys(cache).length !== Object.keys(fresh).length) {
     await publish("summaries_v2", fresh);
   }
@@ -149,6 +169,7 @@ async function main() {
   const results = await Promise.allSettled(SOURCES.map(loadSource));
 
   let okFeeds = 0;
+  const failedFeeds = [];
   const all = [];
   results.forEach((r, i) => {
     const name = SOURCES[i].name;
@@ -165,6 +186,7 @@ async function main() {
       console.log(`OK    ${name}: ${recent.length}টা`);
       all.push(...recent);
     } else {
+      failedFeeds.push(name);
       console.warn(`FAIL  ${name}: ${String(r.reason && r.reason.message ? r.reason.message : r.reason)}`);
     }
   });
@@ -217,12 +239,18 @@ async function main() {
     console.warn("সামারি ধাপ ব্যর্থ, বাদ দিয়ে এগোচ্ছি:", String((e && e.message) || e));
   }
 
+  const generatedAt = new Date().toISOString();
+  const feedStats = { ok: okFeeds, total: SOURCES.length, failed: failedFeeds };
+  // news_meta ছোট — /health এটা পড়ে (বড় news JSON প্রতিবার পার্স করতে হয় না)
   await publish("news", {
     status: "ok",
-    generatedAt: new Date().toISOString(),
+    generatedAt,
     totalResults: articles.length,
+    feedStats,
+    ai: aiStats,
     articles,
   });
+  await publish("news_meta", { generatedAt, totalResults: articles.length, feedStats, ai: aiStats });
 }
 
 main().catch((e) => {

@@ -1,90 +1,44 @@
 # AI News — Backend (GitHub Actions + Cloudflare Workers)
 
 ```
-GitHub Actions (cron)  ──►  Cloudflare KV  ──►  Cloudflare Worker  ──►  Android অ্যাপ
- • প্রতি ৩০ মিনিট: RSS → /api/news
- • প্রতিদিন: OpenRouter → /api/model-pricing
- • নতুন খবরের ২ বাক্যের AI সামারি: Cloudflare Workers AI (ফ্রি অ্যালাউয়েন্স)
+GitHub Actions (cron) ──► Cloudflare KV ──► Cloudflare Worker ──► Android অ্যাপ
+ • প্রতি ৩০ মিনিট: RSS (১৮টা সোর্স) → ছবি + AI সামারি → /api/news
+ • দিনে ২ বার: OpenRouter → /api/model-pricing
+ • প্রতি ৩০ মিনিট: monitor → সমস্যা হলে Telegram
+ • প্রতিদিন: cleanup (পুরনো রান + KV ময়লা)
 ```
 
-সব কোড ও কনফিগ এই রিপোতে। Cloudflare থেকে শুধু **২টা জিনিস** আনতে হয়, GitHub Secrets-এ বসাতে হয়।
+## Workflow-গুলো
 
-## একবারের সেটআপ
+| Workflow | কখন | কাজ |
+|---|---|---|
+| Update AI News | প্রতি ৩০ মিনিট | RSS টানা, ছবি, AI সামারি, KV-তে লেখা |
+| Update AI Model Pricing | দিনে ২ বার | মডেলের দাম/বেঞ্চমার্ক; ব্যর্থ হলে Telegram |
+| Monitor | প্রতি ৩০ মিনিট | `/health` দেখে সমস্যা হলে Telegram (একবারই জানায়, ঠিক হলে জানায়) |
+| Daily Cleanup | প্রতিদিন | ৭ দিনের পুরনো রান মোছা, KV-র অচেনা কী/বাতিল ক্যাশ ছাঁটা, সোমবারে keepalive কমিট |
+| Deploy API | `worker/**` বদলালে / হাতে | Worker ডিপ্লয় + health check |
+| CI | কোড বদলালে | `npm test` |
+| Auto Unzip | রুটে `.zip` পুশ করলে | zip খুলে দেয় |
 
-### ১) Cloudflare থেকে যা আনবেন
-1. dash.cloudflare.com-এ ফ্রি অ্যাকাউন্ট খুলুন।
-2. **Account ID**: Workers & Pages পেজের ডান পাশে (বা ব্রাউজার URL-এর `dash.cloudflare.com/<এই অংশটা>/...`)।
-3. **API Token**: Profile → API Tokens → Create Token → টেমপ্লেট **"Edit Cloudflare Workers"**
-   → Account Resources: আপনার অ্যাকাউন্ট, Zone Resources: All zones → Create → টোকেন কপি করুন (একবারই দেখাবে)।
+## Secrets (রিপো → Settings → Secrets and variables → Actions)
 
-### ২) GitHub-এ কী নামে রাখবেন
-রিপো → Settings → Secrets and variables → Actions → **New repository secret**
-
-| Name (হুবহু) | Value |
+| নাম | কী |
 |---|---|
-| `CLOUDFLARE_API_TOKEN` | ধাপ ১-এর টোকেন |
-| `CLOUDFLARE_ACCOUNT_ID` | ধাপ ১-এর Account ID |
+| `CLOUDFLARE_API_TOKEN` | নিচের **সীমিত** অনুমতির টোকেন |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare Account ID |
+| `TELEGRAM_BOT_TOKEN` | @BotFather থেকে |
+| `TELEGRAM_CHAT_ID` | তোমার chat id (বটকে মেসেজ দিয়ে `https://api.telegram.org/bot<TOKEN>/getUpdates` খুলে `chat.id` দেখো) |
+| `WORKFLOW_PAT` | শুধু Auto Unzip-এর জন্য (`workflow` স্কোপ, শুধু এই রিপো, মেয়াদ সীমিত) |
 
-(`WORKFLOW_PAT` আগেরটাই থাকবে — unzip-এর জন্য। `DATA_REPO_TOKEN` আর লাগবে না।)
+**Cloudflare টোকেন** (Custom token, "Edit Cloudflare Workers" টেমপ্লেট নয়): Account → *Workers Scripts: Edit*, *Workers KV Storage: Edit*, *Workers AI: Edit*। Zone অনুমতি দিও না। Deploy-এ ৪০৩ এলে Account → *Account Settings: Read* যোগ করো।
 
-### ৩) ফাইল তোলা
-`ai-news-backend-v2.zip` রিপোর রুটে আপলোড করুন। Auto Unzip নিজেই খুলে দেবে, তারপর
-**Deploy API (Cloudflare Worker)** নিজে থেকে চলবে। ধাপ ২ আগে শেষ করুন, নইলে এটা ফেল করবে
-(ফেল করলে Actions → Deploy API → Run workflow চাপুন)।
+## আপডেট করার নিয়ম
+রিপোর রুটে নতুন zip আপলোড করলে Auto Unzip খুলে দেয় (zip-এর ভেতরে ফাইল সরাসরি রুটে থাকতে হবে, অতিরিক্ত ফোল্ডার ছাড়া)।
 
-### ৪) ফলাফল দেখা
-Actions → **Deploy API** সবুজ হলে Summary-তে URL পাবেন (ফাইলেও: `status/backend-url.txt`)।
-ব্রাউজারে `<URL>/health` খুলে দেখুন `"ok":true` আর news/pricing-এ count আছে কিনা।
-
-### ৫) অ্যাপে URL বসানো
-`ApiConfig.kt`-এর `BACKEND_BASE_URL`-এ ওই URL দিন (শেষে `/` রেখে), তারপর অ্যাপ রিবিল্ড।
-
-## AI সামারি চালু করা (একবার)
-API Token-এ Workers AI-র অনুমতি যোগ করতে হবে (টোকেনের মান বদলায় না, GitHub Secret ছোঁয়ার দরকার নেই):
-Cloudflare → My Profile → API Tokens → আপনার টোকেনের পাশে **Edit** → Permissions → Add more →
-**Account → Workers AI → Edit** → Continue to summary → Update Token।
-
-- শুধু নতুন খবরের সামারি বানানো হয় (প্রতি রানে সর্বোচ্চ ১৫টা), আগেরগুলো `summaries` কী-তে ক্যাশ থাকে। প্রথমে নতুন খবর থেকে শুরু হয়, তাই পুরো ফিড ভরতে কয়েক ঘণ্টা লাগতে পারে।
-- সামারি শিরোনাম + ফিডের অংশবিশেষ থেকে বানানো, মূল আর্টিকেলের পুরো লেখা থেকে না।
-- অনুমতি না থাকলে বা ফ্রি সীমা শেষ হলে workflow ফেল হয় না; লগে `AI ব্যর্থ` লাইন আসে আর অ্যাপ সোর্সের description দেখায়।
-- বন্ধ করতে: `update-news.yml`-এর `env`-এ `AI_SUMMARIES: "off"` দিন। মডেল বদলাতে `AI_MODEL`
-  (Cloudflare-এর মডেল তালিকা বদলায়, তাই কোনোদিন মডেল বন্ধ হলে এটা বদলাবেন)।
-
-## ছবি ও লম্বা সামারি (v3)
-- **ছবি**: প্রথমে RSS-এর ছবি; না থাকলে আর্টিকেল পেজের `og:image` লিংক (প্রতি রানে সর্বোচ্চ ৩০টা নতুন খোঁজা, `images_v1` কী-তে ক্যাশ)। শুধু লিংক রাখা হয়, ছবি কপি হয় না।
-- **AI আউটপুট**: ৩-৪ বাক্যের সামারি (ফিডে পুরো লেখা থাকলে সেটা থেকে, না হলে ছোট) + ৩টা মূল পয়েন্ট। ক্যাশ কী `summaries_v2`; প্রতি রানে সর্বোচ্চ ২৫টা নতুন (`MAX_NEW_SUMMARIES`)।
-- লগে দেখুন: `ছবি: X/Y আর্টিকেলে ...` আর `AI সামারি: ক্যাশ ..., নতুন ...`।
-
-## প্রতিদিনের কাজ — কিছুই না
-- নিউজ: প্রতি ৩০ মিনিটে, প্রাইসিং: প্রতিদিন। কোনো workflow ফেল করলে GitHub আপনাকে ইমেইল করবে।
-- নিউজ সোর্স বদলাতে `config/sources.json` এডিট করুন (name, url, filter)।
-  `filter: true` মানে শুধু AI-সম্পর্কিত আইটেম রাখা হবে।
-- মডেল লিস্ট বদলাতে `scripts/update-pricing.js`-এর `INCLUDE_PREFIXES`।
-- Actions → Update AI News → Run workflow দিয়ে যেকোনো সময় হাতে চালানো যায়; লগে প্রতিটা ফিডের `OK`/`FAIL` দেখা যায়।
-
-## সমস্যা হলে
-| লক্ষণ | কারণ / সমাধান |
-|---|---|
-| Deploy: "CLOUDFLARE_API_TOKEN ... সেট করা নেই" | ধাপ ২-এর secret নাম/মান ঠিক নেই |
-| Deploy: subdomain অটো-তৈরি হয়নি | Cloudflare → Workers & Pages একবার খুলুন, তারপর Run workflow |
-| Deploy: 403 / Authentication error | টোকেনে "Edit Cloudflare Workers" টেমপ্লেট নেই, বা ভুল অ্যাকাউন্ট বাছা |
-| `/api/news` → 503 data_not_ready | Update AI News একবার Run workflow করুন |
-| লগে "AI ব্যর্থ ... 403 Authentication error" | টোকেনে Workers AI: Edit যোগ করুন (উপরের ধাপ) |
-| লগে "AI ব্যর্থ" অন্য এরর | মডেলের নাম বদলে থাকতে পারে — `AI_MODEL` বদলান |
-| News: "কমপক্ষে ৮টা দরকার" | বেশিরভাগ ফিড FAIL — লগ দেখে `config/sources.json`-এর URL ঠিক করুন |
-
-## খরচ ও সীমা (ফ্রি)
-Workers Free: দিনে ১ লাখ রিকোয়েস্ট; KV Free: দিনে ১ লাখ রিড, ১০০০ রাইট (আমরা দিনে ~৫০ লিখি)।
-অ্যাপ ১৫ মিনিট ক্যাশ রাখে আর Worker ৫ মিনিটের `Cache-Control` দেয়, তাই সীমা অনেক ইউজার পর্যন্ত যথেষ্ট।
-এখনকার সীমা Cloudflare-এর ডকুমেন্টেশনে দেখে নিন।
-
-## পরে অ্যাডস/সাবস্ক্রিপশন যোগ করলে
-ব্যাকএন্ডে কিছু বদলাতে হবে না। দরকার হলে Cloudflare Workers Paid প্ল্যান ($5/মাস), অ্যাপে SDK/Billing,
-আর প্রাইভেসি পলিসি ও Play Data safety আপডেট।
-
-## প্রাইভেসি পলিসি (Play Store-এর জন্য)
-`docs/index.html`-এ `YOUR_EMAIL_HERE` বদলে নিজের ইমেইল দিন। তারপর রিপো → Settings → Pages →
-Branch `main`, Folder `/docs` → Save। URL হবে `https://<ইউজারনেম>.github.io/<রিপো>/`। এটাই Play Console-এ দেবেন।
-
-## লোকালি টেস্ট (ঐচ্ছিক)
-`npm test` — পার্সারের টেস্ট। `OUTPUT_DIR=out node scripts/update-news.js` — KV-র বদলে ফাইলে লেখে।
+## গুরুত্বপূর্ণ নোট
+- **AI মডেল:** `@cf/meta/llama-3.1-8b-instruct` Cloudflare ২০২৬-০৫-৩০ এ বন্ধ করেছে। এখন ডিফল্ট `...-instruct-fp8`; কোনো মডেল বন্ধ হলে কোড নিজে পরেরটায় যায় (`scripts/lib/ai.js` → `DEFAULT_MODELS`)। সব মডেল ফেল করলে monitor Telegram-এ জানাবে।
+- **Actions মিনিট:** পাবলিক রিপোতে সীমাহীন। প্রাইভেট রিপোতে ফ্রি ২০০০ মিনিট/মাস, আর এই pipeline তার চেয়ে বেশি খরচ করে — তাই রিপো **পাবলিক** রাখো (কোডে কোনো সিক্রেট নেই), নইলে `update-news.yml`-এর cron ঘণ্টায় একবার করো।
+- **Cloudflare ফ্রি সীমা:** KV লেখা ১,০০০/দিন (আমরা ~২০০), পড়া ১,০০,০০০/দিন, Worker রিকোয়েস্ট ১,০০,০০০/দিন, Workers AI ১০,০০০ neurons/দিন (~৪০০+ সামারি)। ব্যবহারকারী বাড়লে রিকোয়েস্ট সীমাই আগে ধরবে।
+- নিউজ সোর্স: `config/sources.json`। কোনো ফিড ফেল করলে লগে `FAIL` আর `/health`-এ `feeds.failed` দেখা যায়।
+- মডেল-তালিকা: `scripts/update-pricing.js`-এর `INCLUDE_PREFIXES`। প্রিফিক্স না মিললে Telegram আসে।
+- লোকাল টেস্ট: `npm test`।

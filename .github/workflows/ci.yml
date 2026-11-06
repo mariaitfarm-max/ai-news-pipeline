@@ -1,0 +1,27 @@
+name: CI
+
+"on":
+  push:
+    paths:
+      - "scripts/**"
+      - "worker/**"
+      - "test/**"
+      - "config/**"
+      - "package.json"
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: sources.json বৈধ JSON কি না
+        run: node -e "JSON.parse(require('fs').readFileSync('config/sources.json','utf8'))"
+      - run: npm test
