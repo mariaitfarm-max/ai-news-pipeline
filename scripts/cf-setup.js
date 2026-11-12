@@ -33,11 +33,25 @@ async function main() {
     }
   }
 
+  // GitHub Actions-এ GITHUB_REPOSITORY / GITHUB_REF_NAME নিজে থেকে থাকে
+  const repo = process.env.GITHUB_REPOSITORY || "";
+  const ref = process.env.GITHUB_REF_NAME || "main";
+
   const toml = [
     `name = "${WORKER_NAME}"`,
     `main = "src/index.js"`,
     `compatibility_date = "2025-06-01"`,
     `workers_dev = true`,
+    `keep_vars = true`,
+    ``,
+    `# Cron: খবর প্রতি ৩০ মিনিটে, দাম দিনে ২ বার — GitHub-এর শিডিউল ভরসা না করে Cloudflare নিজে workflow চালু করে`,
+    `# (worker/src/index.js-এর PRICING_CRON-এর সাথে মিল থাকতে হবে)`,
+    `[triggers]`,
+    `crons = ["2,32 * * * *", "23 3,15 * * *"]`,
+    ``,
+    `[vars]`,
+    `GH_REPO = "${repo}"`,
+    `GH_REF = "${ref}"`,
     ``,
     `[[kv_namespaces]]`,
     `binding = "AINEWS"`,

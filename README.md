@@ -1,10 +1,11 @@
 # AI News — Backend (GitHub Actions + Cloudflare Workers)
 
 ```
-GitHub Actions (cron) ──► Cloudflare KV ──► Cloudflare Worker ──► Android অ্যাপ
- • প্রতি ৩০ মিনিট: RSS (১৮টা সোর্স) → ছবি + AI সামারি → /api/news
- • দিনে ২ বার: OpenRouter → /api/model-pricing
- • প্রতি ৩০ মিনিট: monitor → সমস্যা হলে Telegram
+Cloudflare Worker (Cron) ──dispatch──► GitHub Actions ──► Cloudflare KV ──► Worker API ──► Android অ্যাপ
+ • Cloudflare Cron প্রতি ৩০ মিনিটে "Update AI News" ও দিনে ২ বার "Update AI Model Pricing" workflow চালু করে
+   (GitHub-এর নিজের schedule ৫-৮ ঘণ্টা পরপর চলছিল, তাই ওটা এখন শুধু ব্যাকআপ)
+ • Worker প্রতিবার /health দেখে — ডেটা পুরনো/ফিড বা AI ফেল/dispatch ব্যর্থ হলে Telegram (একবারই)
+ • /health?strict=1 → সমস্যায় 503 (UptimeRobot-এর জন্য, GitHub-এর ওপর নির্ভর না করে)
  • প্রতিদিন: cleanup (পুরনো রান + KV ময়লা)
 ```
 
@@ -14,7 +15,7 @@ GitHub Actions (cron) ──► Cloudflare KV ──► Cloudflare Worker ──
 |---|---|---|
 | Update AI News | প্রতি ৩০ মিনিট | RSS টানা, ছবি, AI সামারি, KV-তে লেখা |
 | Update AI Model Pricing | দিনে ২ বার | মডেলের দাম/বেঞ্চমার্ক; ব্যর্থ হলে Telegram |
-| Monitor | প্রতি ৩০ মিনিট | `/health` দেখে সমস্যা হলে Telegram (একবারই জানায়, ঠিক হলে জানায়) |
+| Monitor | শুধু হাতে | আগে GitHub-এ ছিল; এখন পাহারা দেয় Worker-এর Cron |
 | Daily Cleanup | প্রতিদিন | ৭ দিনের পুরনো রান মোছা, KV-র অচেনা কী/বাতিল ক্যাশ ছাঁটা, সোমবারে keepalive কমিট |
 | Deploy API | `worker/**` বদলালে / হাতে | Worker ডিপ্লয় + health check |
 | CI | কোড বদলালে | `npm test` |
@@ -42,3 +43,16 @@ GitHub Actions (cron) ──► Cloudflare KV ──► Cloudflare Worker ──
 - নিউজ সোর্স: `config/sources.json`। কোনো ফিড ফেল করলে লগে `FAIL` আর `/health`-এ `feeds.failed` দেখা যায়।
 - মডেল-তালিকা: `scripts/update-pricing.js`-এর `INCLUDE_PREFIXES`। প্রিফিক্স না মিললে Telegram আসে।
 - লোকাল টেস্ট: `npm test`।
+
+
+## Cloudflare Cron সেটআপ (একবার)
+
+1. **GitHub টোকেন:** GitHub → Settings → Developer settings → Personal access tokens → **Fine-grained tokens** → Generate:
+   Repository access = *Only select repositories* → এই রিপো; Permissions → **Actions: Read and write**; মেয়াদ ১ বছর (ক্যালেন্ডারে রিমাইন্ডার রাখো)।
+2. **Cloudflare ড্যাশবোর্ড** → Workers & Pages → `ainews-api` → Settings → Variables and Secrets → **Add** (টাইপ **Secret**):
+   `GH_DISPATCH_TOKEN` (ওপরের টোকেন), `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`।
+3. Deploy API workflow চালাও (বা কোড আপলোডে নিজে চলে)। Worker → Settings → Triggers-এ দুটো Cron দেখা যাবে।
+4. যাচাই: ৩০ মিনিটের মধ্যে Actions-এ Event = `workflow_dispatch` রান আসবে; `curl <worker>/health?strict=1` → 200।
+5. (ঐচ্ছিক) UptimeRobot (ফ্রি) → HTTP monitor → `<worker>/health?strict=1`, প্রতি ৫ মিনিট।
+
+টোকেনের মেয়াদ শেষ হলে বা অনুমতি ভুল হলে Worker নিজেই Telegram-এ "GitHub workflow চালু করা গেল না" জানাবে।

@@ -1,10 +1,9 @@
 name: Monitor
 
+# (এখন পাহারা দেয় Cloudflare Worker-এর Cron — worker/src/index.js; এটা শুধু হাতে চালানোর জন্য)
 # /health দেখে সমস্যা (পুরনো ডেটা, ফিড ফেল, AI ফেল, API বন্ধ) হলে Telegram-এ জানায়।
 # একই সমস্যা একবারই জানায়, ঠিক হলে "ঠিক হয়েছে" পাঠায়, না হলে ১২ ঘণ্টা পর রিমাইন্ডার।
 "on":
-  schedule:
-    - cron: "11,41 * * * *"
   workflow_dispatch:
 
 permissions:
