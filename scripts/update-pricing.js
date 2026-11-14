@@ -76,7 +76,7 @@ async function main() {
 
   await publish("pricing", {
     last_updated: new Date().toISOString(),
-    source: OPENROUTER_URL,
+    source: "OpenRouter (benchmarks: Artificial Analysis)",
     model_count: rows.length,
     models: rows,
   });

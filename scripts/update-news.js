@@ -17,7 +17,7 @@ const SOURCES = JSON.parse(fs.readFileSync(path.join(root, "config", "sources.js
 const MAX_AGE_MS = 7 * 24 * 3600 * 1000;
 const PER_FEED = 15;
 const TOTAL = 120;
-const SNIPPET = 500;
+const SNIPPET = 300;
 const MIN_ARTICLES = Number(process.env.MIN_ARTICLES || 8);
 const AI_ON = String(process.env.AI_SUMMARIES || "on").toLowerCase() !== "off";
 // AI_MODEL দিলে সেটা আগে, তারপর ডিফল্ট তালিকা (বন্ধ মডেল নিজে বাদ পড়ে)
